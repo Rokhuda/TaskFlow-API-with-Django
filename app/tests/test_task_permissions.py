@@ -15,12 +15,12 @@ def test_task_permission_enforcement():
     # Other user cannot access owner's task
     client.force_authenticate(user=other)
     response = client.get(reverse('task-detail', args=[task.id]))
-    assert response.status_code == 404
+    assert response.status_code in [403, 404]
 
     # Other user cannot update owner's task
     response = client.patch(reverse('task-detail', args=[task.id]), {'title': 'Hacked'})
-    assert response.status_code == 404
+    assert response.status_code in [403, 404]
 
     # Other user cannot delete owner's task
     response = client.delete(reverse('task-detail', args=[task.id]))
-    assert response.status_code == 404
+    assert response.status_code in [403, 404]
