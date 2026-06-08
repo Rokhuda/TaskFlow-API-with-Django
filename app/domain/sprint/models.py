@@ -36,20 +36,24 @@ class Sprint(TimeStampedModel):
         ]
 
     def __str__(self):
+        """Return a readable sprint name for admin lists and logging."""
         return f"{self.name} - {self.project.name}"
 
     @property
     def is_active(self):
+        """Return True when the sprint is currently active."""
         return self.status == self.STATUS_ACTIVE
 
     @property
     def days_remaining(self):
+        """Return remaining sprint days only for active sprints."""
         if self.status == self.STATUS_ACTIVE:
             return max(0, (self.end_date - timezone.now()).days)
         return 0
 
     @property
     def progress_percent(self):
+        """Compute sprint progress as a percentage of elapsed time."""
         if self.start_date >= self.end_date:
             return 0
         total_days = max(1, (self.end_date - self.start_date).days)
@@ -78,7 +82,7 @@ class Sprint(TimeStampedModel):
         }
 
     def calculate_velocity(self):
-        """Calculate a simple sprint velocity based on completed story points."""
+        """Calculate a simple sprint velocity using completed story points."""
         completed_points = self.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
         return completed_points / 1 if completed_points else 0
 

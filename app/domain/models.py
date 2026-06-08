@@ -30,9 +30,11 @@ class Task(TimeStampedModel):
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
     sprint = models.ForeignKey('Sprint', null=True, blank=True, on_delete=models.SET_NULL, related_name='tasks')
+    # A task may depend on other tasks. `blocked_by` stores its blockers.
     blocked_by = models.ManyToManyField('self', symmetrical=False, related_name='blocks', blank=True)
 
     def __str__(self):
+        """Show the task title in admin and debug output."""
         return self.title
 
     @property

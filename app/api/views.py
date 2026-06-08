@@ -42,6 +42,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         """Filter tasks by owner and optional query parameters."""
         queryset = Task.objects.all()
         if not self.request.user.is_staff:
+            # Only allow non-staff users to see their own tasks.
             queryset = queryset.filter(owner=self.request.user)
 
         priority = self.request.query_params.get('priority')
@@ -67,6 +68,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Cannot assign a task to a sprint outside your projects.')
 
         task = serializer.save(owner=self.request.user)
+        # Ensure completed tasks record the completion timestamp.
         if task.completed and not task.completed_at:
             task.completed_at = timezone.now()
             task.save(update_fields=['completed_at'])
@@ -77,6 +79,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         """Update tasks and keep completion/quadrant values in sync."""
         task = serializer.save()
+        # Preserve the completion timestamp when a task becomes complete.
         if task.completed and not task.completed_at:
             task.completed_at = timezone.now()
             task.save(update_fields=['completed_at'])
@@ -163,6 +166,7 @@ class SprintViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='tasks/assign')
     def assign_task(self, request, pk=None):
+        """Assign an existing task to this sprint."""
         sprint = self.get_object()
         task_id = request.data.get('task_id')
         if not task_id:
@@ -184,10 +188,12 @@ class SprintViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='tasks/move')
     def move_task(self, request, pk=None):
+        """Move a task into this sprint by delegating to assign_task."""
         return self.assign_task(request, pk)
 
     @action(detail=True, methods=['get'])
     def metrics(self, request, pk=None):
+        """Return sprint metrics for the requested sprint."""
         sprint = self.get_object()
         return Response(sprint.get_metrics())
 

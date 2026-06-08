@@ -28,7 +28,7 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at', 'completed_at']
 
     def validate(self, data):
-        """Prevent task completion when blockers are incomplete."""
+        """Prevent completing a task while any blocking task is still incomplete."""
         completed = data.get('completed')
         blocked_by = data.get('blocked_by')
 
@@ -38,13 +38,15 @@ class TaskSerializer(serializers.ModelSerializer):
         if completed and blocked_by is not None:
             for blocked_task in blocked_by:
                 if not blocked_task.completed:
-                    raise serializers.ValidationError('Cannot complete a task while its blockers are incomplete.')
+                    raise serializers.ValidationError(
+                        'Cannot complete a task while its blockers are incomplete.'
+                    )
 
         return data
 
 
 class SprintSerializer(serializers.ModelSerializer):
-    """Serialize sprint details and computed sprint summary fields."""
+    """Serialize sprint details and compute aggregated sprint summary fields."""
 
     progress_percent = serializers.ReadOnlyField()
     days_remaining = serializers.ReadOnlyField()
@@ -76,19 +78,25 @@ class SprintSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_task_count(self, obj):
+        """Return the total number of tasks assigned to this sprint."""
         return obj.tasks.count()
 
     def get_completed_count(self, obj):
+        """Return the count of completed tasks in the sprint."""
         return obj.tasks.filter(completed=True).count()
 
     def get_total_story_points(self, obj):
+        """Return the total story points across all sprint tasks."""
         return obj.tasks.aggregate(total=Sum('story_points'))['total'] or 0
 
     def get_completed_story_points(self, obj):
+        """Return the story points value for completed sprint tasks."""
         return obj.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
 
 
 class ProjectSerializer(serializers.ModelSerializer):
+    """Serialize project metadata and enforce read-only owner fields."""
+
     class Meta:
         model = Project
         fields = [
@@ -101,3 +109,4 @@ class ProjectSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+        # Owner, created_at, and updated_at are managed by the system.

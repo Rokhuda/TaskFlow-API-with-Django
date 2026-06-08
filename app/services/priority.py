@@ -2,14 +2,11 @@ from django.utils import timezone
 
 
 class PriorityMatrixService:
-    """Calculates task priority quadrants using urgency and importance scoring."""
+    """Calculate priority performance values for tasks using an Eisenhower-style matrix."""
 
     @staticmethod
     def calculate_priority_scores(task):
-        """Return urgency, importance and quadrant values for a task."""
-
-    @staticmethod
-    def calculate_priority_scores(task):
+        """Return a dictionary containing urgency, importance, and the final quadrant."""
         urgency = PriorityMatrixService._calculate_urgency(task)
         importance = PriorityMatrixService._calculate_importance(task)
         quadrant = PriorityMatrixService._determine_quadrant(urgency, importance)
@@ -22,14 +19,17 @@ class PriorityMatrixService:
 
     @staticmethod
     def determine_quadrant(task):
+        """Compute only the task priority quadrant label."""
         return PriorityMatrixService.calculate_priority_scores(task)['quadrant']
 
     @staticmethod
     def _calculate_urgency(task):
+        """Score urgency based on due date proximity and blocked dependencies."""
         score = 0
         if task.due_date:
             days_until_due = (task.due_date - timezone.now()).days
             if days_until_due < 0:
+                # Past due date tasks are highest urgency.
                 score += 40
             elif days_until_due <= 3:
                 score += 35
@@ -40,6 +40,7 @@ class PriorityMatrixService:
             else:
                 score += 5
 
+        # Tasks blocked by other incomplete tasks gain extra urgency.
         if task.blocks.exists():
             blocked_count = task.blocks.count()
             score += min(20, blocked_count * 5)
@@ -48,6 +49,7 @@ class PriorityMatrixService:
 
     @staticmethod
     def _calculate_importance(task):
+        """Score importance based on task priority, size, and estimated effort."""
         score = 0
         if task.priority == 'high':
             score += 40
@@ -57,6 +59,7 @@ class PriorityMatrixService:
             score += 10
 
         if task.story_points:
+            # Larger tasks are treated as more important for planning.
             score += min(25, task.story_points * 2)
 
         if task.estimated_hours and task.estimated_hours > 8:
@@ -66,7 +69,7 @@ class PriorityMatrixService:
 
     @staticmethod
     def _determine_quadrant(urgency, importance):
-        """Map urgency and importance scores into the Eisenhower quadrant."""
+        """Map urgency and importance scores into one of four priority quadrants."""
         if urgency >= 30 and importance >= 30:
             return 'urgent_important'
         if urgency < 30 and importance >= 30:
