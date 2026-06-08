@@ -59,12 +59,18 @@ class TaskViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Cannot assign a task to a sprint outside your projects.')
 
         task = serializer.save(owner=self.request.user)
+        if task.completed and not task.completed_at:
+            task.completed_at = timezone.now()
+            task.save(update_fields=['completed_at'])
         if not task.priority_quadrant:
             task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
             task.save(update_fields=['priority_quadrant'])
 
     def perform_update(self, serializer):
         task = serializer.save()
+        if task.completed and not task.completed_at:
+            task.completed_at = timezone.now()
+            task.save(update_fields=['completed_at'])
         if not task.priority_quadrant:
             task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
             task.save(update_fields=['priority_quadrant'])
@@ -98,6 +104,9 @@ class SprintViewSet(viewsets.ModelViewSet):
             serializer = TaskSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             task = serializer.save(owner=request.user, sprint=sprint)
+            if task.completed and not task.completed_at:
+                task.completed_at = timezone.now()
+                task.save(update_fields=['completed_at'])
             if not task.priority_quadrant:
                 task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
                 task.save(update_fields=['priority_quadrant'])
@@ -110,6 +119,29 @@ class SprintViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def burndown(self, request, pk=None):
+        sprint = self.get_object()
+        return Response({'burndown_data': sprint.get_burndown_data()})
+
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        sprint = self.get_object()
+        if sprint.status != 'planned':
+            return Response({'detail': 'Sprint can only be started when it is planned.'}, status=400)
+        sprint.status = 'active'
+        sprint.save(update_fields=['status'])
+        return Response({'status': sprint.status})
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        sprint = self.get_object()
+        if sprint.status != 'active':
+            return Response({'detail': 'Sprint can only be completed when it is active.'}, status=400)
+        sprint.status = 'completed'
+        sprint.save(update_fields=['status'])
+        return Response({'status': sprint.status})
 
     @action(detail=True, methods=['post'], url_path='tasks/assign')
     def assign_task(self, request, pk=None):

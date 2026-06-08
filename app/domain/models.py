@@ -26,11 +26,26 @@ class Task(TimeStampedModel):
     estimated_hours = models.FloatField(null=True, blank=True)
     due_date = models.DateTimeField(null=True, blank=True)
     completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
     sprint = models.ForeignKey('Sprint', null=True, blank=True, on_delete=models.SET_NULL, related_name='tasks')
     blocked_by = models.ManyToManyField('self', symmetrical=False, related_name='blocks', blank=True)
 
     def __str__(self):
         return self.title
+
+    @property
+    def is_blocked(self):
+        return self.blocked_by.filter(completed=False).exists()
+
+    def mark_completed(self):
+        if not self.completed:
+            self.completed = True
+            self.completed_at = timezone.now()
+            self.save(update_fields=['completed', 'completed_at'])
+
+    def clean(self):
+        if self.completed and self.is_blocked:
+            raise ValueError('A blocked task cannot be completed until all blocking tasks are finished.')
 
 
 from .project.models import Project  # noqa

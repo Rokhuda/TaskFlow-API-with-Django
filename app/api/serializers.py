@@ -16,13 +16,28 @@ class TaskSerializer(serializers.ModelSerializer):
             'estimated_hours',
             'due_date',
             'completed',
+            'completed_at',
             'sprint',
             'blocked_by',
             'owner',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'owner', 'created_at', 'updated_at', 'completed_at']
+
+    def validate(self, data):
+        completed = data.get('completed')
+        blocked_by = data.get('blocked_by')
+
+        if self.instance and blocked_by is None:
+            blocked_by = self.instance.blocked_by.all()
+
+        if completed and blocked_by is not None:
+            for blocked_task in blocked_by:
+                if not blocked_task.completed:
+                    raise serializers.ValidationError('Cannot complete a task while its blockers are incomplete.')
+
+        return data
 
 
 class SprintSerializer(serializers.ModelSerializer):

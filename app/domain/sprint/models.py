@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.db.models import Sum
 from ..common.models import TimeStampedModel
 
 
@@ -55,18 +56,49 @@ class Sprint(TimeStampedModel):
 
     def get_metrics(self):
         tasks = self.tasks.all()
-        total_points = tasks.aggregate(total=models.Sum('story_points'))['total'] or 0
-        completed_points = tasks.filter(completed=True).aggregate(total=models.Sum('story_points'))['total'] or 0
+        total_points = tasks.aggregate(total=Sum('story_points'))['total'] or 0
+        completed_points = tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
+        completed_count = tasks.filter(completed=True).count()
+        remaining_points = max(0, total_points - completed_points)
         return {
             'total_tasks': tasks.count(),
-            'completed_tasks': tasks.filter(completed=True).count(),
+            'completed_tasks': completed_count,
             'in_progress_tasks': tasks.filter(completed=False).count(),
             'total_story_points': total_points,
             'completed_story_points': completed_points,
-            'remaining_story_points': total_points - completed_points,
+            'remaining_story_points': remaining_points,
             'progress_percent': self.progress_percent,
             'days_remaining': self.days_remaining,
+            'velocity': self.calculate_velocity(),
+            'completion_rate': self.calculate_completion_rate(),
+            'burndown_data': self.get_burndown_data(),
         }
+
+    def calculate_velocity(self):
+        completed_points = self.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
+        return completed_points / 1 if completed_points else 0
+
+    def calculate_completion_rate(self):
+        tasks = self.tasks.all()
+        total = tasks.count()
+        if total == 0:
+            return 0
+        return round((tasks.filter(completed=True).count() / total) * 100, 2)
+
+    def get_burndown_data(self):
+        total_points = self.tasks.aggregate(total=Sum('story_points'))['total'] or 0
+        completed_points = self.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
+        remaining_points = max(0, total_points - completed_points)
+        day_count = max(1, (self.end_date.date() - self.start_date.date()).days)
+        burndown = []
+        for day_index in range(day_count + 1):
+            date = self.start_date.date() + timezone.timedelta(days=day_index)
+            expected_remaining = int(round(total_points - ((total_points - remaining_points) * day_index / day_count)))
+            burndown.append({
+                'date': date.isoformat(),
+                'remaining_story_points': max(0, expected_remaining),
+            })
+        return burndown
 
 
 class SprintMetrics(TimeStampedModel):
