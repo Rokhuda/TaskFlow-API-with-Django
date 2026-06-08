@@ -1,9 +1,11 @@
 from rest_framework import viewsets, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from app.domain.models import Task, Sprint, Project
 from app.api.serializers import TaskSerializer, SprintSerializer, ProjectSerializer
+from app.services.priority import PriorityMatrixService
 from rest_framework.pagination import PageNumberPagination
 
 
@@ -28,7 +30,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     pagination_class = TaskPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'description']
-    ordering_fields = ['priority', 'created_at', 'due_date', 'story_points']
+    ordering_fields = ['priority', 'priority_quadrant', 'created_at', 'due_date', 'story_points']
 
     def get_queryset(self):
         queryset = Task.objects.all()
@@ -52,7 +54,20 @@ class TaskViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        sprint = serializer.validated_data.get('sprint')
+        if sprint and not self.request.user.is_staff and sprint.project.owner != self.request.user:
+            raise PermissionDenied('Cannot assign a task to a sprint outside your projects.')
+
+        task = serializer.save(owner=self.request.user)
+        if not task.priority_quadrant:
+            task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
+            task.save(update_fields=['priority_quadrant'])
+
+    def perform_update(self, serializer):
+        task = serializer.save()
+        if not task.priority_quadrant:
+            task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
+            task.save(update_fields=['priority_quadrant'])
 
 
 class SprintViewSet(viewsets.ModelViewSet):
@@ -62,6 +77,7 @@ class SprintViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'goal']
     ordering_fields = ['start_date', 'end_date', 'status']
+    pagination_class = TaskPagination
 
     def get_queryset(self):
         if self.request.user.is_staff:
@@ -69,7 +85,56 @@ class SprintViewSet(viewsets.ModelViewSet):
         return Sprint.objects.filter(project__owner=self.request.user)
 
     def perform_create(self, serializer):
+        project = serializer.validated_data.get('project')
+        if project and not self.request.user.is_staff and project.owner != self.request.user:
+            raise PermissionDenied('Cannot create a sprint for a project you do not own.')
         serializer.save()
+
+    @action(detail=True, methods=['get', 'post'])
+    def tasks(self, request, pk=None):
+        sprint = self.get_object()
+
+        if request.method == 'POST':
+            serializer = TaskSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            task = serializer.save(owner=request.user, sprint=sprint)
+            if not task.priority_quadrant:
+                task.priority_quadrant = PriorityMatrixService.determine_quadrant(task)
+                task.save(update_fields=['priority_quadrant'])
+            return Response(TaskSerializer(task).data, status=201)
+
+        tasks = sprint.tasks.all()
+        page = self.paginate_queryset(tasks)
+        if page is not None:
+            serializer = TaskSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='tasks/assign')
+    def assign_task(self, request, pk=None):
+        sprint = self.get_object()
+        task_id = request.data.get('task_id')
+        if not task_id:
+            return Response({'detail': 'task_id is required.'}, status=400)
+
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            return Response({'detail': 'Task not found.'}, status=404)
+
+        if not request.user.is_staff and task.owner != request.user:
+            raise PermissionDenied('You do not have permission to modify this task.')
+        if not request.user.is_staff and sprint.project.owner != request.user:
+            raise PermissionDenied('Cannot assign tasks to a sprint outside your projects.')
+
+        task.sprint = sprint
+        task.save()
+        return Response(TaskSerializer(task).data)
+
+    @action(detail=True, methods=['post'], url_path='tasks/move')
+    def move_task(self, request, pk=None):
+        return self.assign_task(request, pk)
 
     @action(detail=True, methods=['get'])
     def metrics(self, request, pk=None):
