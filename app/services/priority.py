@@ -6,6 +6,10 @@ class PriorityMatrixService:
 
     @staticmethod
     def calculate_priority_scores(task):
+        """Return urgency, importance and quadrant values for a task."""
+
+    @staticmethod
+    def calculate_priority_scores(task):
         urgency = PriorityMatrixService._calculate_urgency(task)
         importance = PriorityMatrixService._calculate_importance(task)
         quadrant = PriorityMatrixService._determine_quadrant(urgency, importance)
@@ -62,6 +66,7 @@ class PriorityMatrixService:
 
     @staticmethod
     def _determine_quadrant(urgency, importance):
+        """Map urgency and importance scores into the Eisenhower quadrant."""
         if urgency >= 30 and importance >= 30:
             return 'urgent_important'
         if urgency < 30 and importance >= 30:

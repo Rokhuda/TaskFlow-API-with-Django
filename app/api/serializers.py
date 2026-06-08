@@ -4,6 +4,8 @@ from app.domain.models import Task, Sprint, Project
 
 
 class TaskSerializer(serializers.ModelSerializer):
+    """Serializes task data and enforces blocked-task completion rules."""
+
     class Meta:
         model = Task
         fields = [
@@ -26,6 +28,7 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at', 'completed_at']
 
     def validate(self, data):
+        """Prevent task completion when blockers are incomplete."""
         completed = data.get('completed')
         blocked_by = data.get('blocked_by')
 
@@ -41,6 +44,8 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 class SprintSerializer(serializers.ModelSerializer):
+    """Serialize sprint details and computed sprint summary fields."""
+
     progress_percent = serializers.ReadOnlyField()
     days_remaining = serializers.ReadOnlyField()
     task_count = serializers.SerializerMethodField()

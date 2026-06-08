@@ -5,6 +5,8 @@ from ..common.models import TimeStampedModel
 
 
 class Sprint(TimeStampedModel):
+    """Represents a sprint/iteration in a project."""
+
     STATUS_PLANNED = 'planned'
     STATUS_ACTIVE = 'active'
     STATUS_COMPLETED = 'completed'
@@ -55,6 +57,7 @@ class Sprint(TimeStampedModel):
         return min(100, max(0, int((elapsed_days / total_days) * 100)))
 
     def get_metrics(self):
+        """Return sprint-level metrics for UI dashboards and API endpoints."""
         tasks = self.tasks.all()
         total_points = tasks.aggregate(total=Sum('story_points'))['total'] or 0
         completed_points = tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
@@ -75,17 +78,29 @@ class Sprint(TimeStampedModel):
         }
 
     def calculate_velocity(self):
+        """Calculate a simple sprint velocity based on completed story points."""
         completed_points = self.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
         return completed_points / 1 if completed_points else 0
 
     def calculate_completion_rate(self):
+        """Return the completed task percentage for the sprint."""
         tasks = self.tasks.all()
         total = tasks.count()
         if total == 0:
             return 0
         return round((tasks.filter(completed=True).count() / total) * 100, 2)
 
+    def calculate_on_time_rate(self):
+        """Return the percentage of completed sprint tasks finished by their due date."""
+        completed_tasks = self.tasks.filter(completed=True, due_date__isnull=False)
+        total = completed_tasks.count()
+        if total == 0:
+            return 0
+        on_time = completed_tasks.filter(completed_at__lte=models.F('due_date')).count()
+        return round((on_time / total) * 100, 2)
+
     def get_burndown_data(self):
+        """Generate a simple burndown curve for the sprint based on story points."""
         total_points = self.tasks.aggregate(total=Sum('story_points'))['total'] or 0
         completed_points = self.tasks.filter(completed=True).aggregate(total=Sum('story_points'))['total'] or 0
         remaining_points = max(0, total_points - completed_points)
@@ -100,8 +115,20 @@ class Sprint(TimeStampedModel):
             })
         return burndown
 
+    def update_metrics(self):
+        """Persist computed sprint metrics to the SprintMetrics record."""
+        metrics, created = SprintMetrics.objects.get_or_create(sprint=self)
+        metrics.velocity = self.calculate_velocity()
+        metrics.completion_rate = self.calculate_completion_rate()
+        metrics.on_time_rate = self.calculate_on_time_rate()
+        metrics.burndown_data = self.get_burndown_data()
+        metrics.save()
+        return metrics
+
 
 class SprintMetrics(TimeStampedModel):
+    """Stores computed sprint metrics for reporting and historical tracking."""
+
     sprint = models.OneToOneField(Sprint, on_delete=models.CASCADE, related_name='metrics')
     burndown_data = models.JSONField(default=list, blank=True)
     velocity = models.FloatField(null=True, blank=True)

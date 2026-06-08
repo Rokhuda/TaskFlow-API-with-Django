@@ -5,6 +5,8 @@ from .common.models import TimeStampedModel
 
 
 class Task(TimeStampedModel):
+    """Represents a task in the TaskFlow workflow."""
+
     PRIORITY_CHOICES = [
         ('low', 'Low'),
         ('medium', 'Medium'),
@@ -35,15 +37,18 @@ class Task(TimeStampedModel):
 
     @property
     def is_blocked(self):
+        """Returns True when this task is blocked by any incomplete parent tasks."""
         return self.blocked_by.filter(completed=False).exists()
 
     def mark_completed(self):
+        """Mark the task as complete and record the completion timestamp."""
         if not self.completed:
             self.completed = True
             self.completed_at = timezone.now()
             self.save(update_fields=['completed', 'completed_at'])
 
     def clean(self):
+        """Prevent marking a blocked task complete until blockers are resolved."""
         if self.completed and self.is_blocked:
             raise ValueError('A blocked task cannot be completed until all blocking tasks are finished.')
 

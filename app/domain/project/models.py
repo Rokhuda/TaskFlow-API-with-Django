@@ -4,6 +4,8 @@ from ..common.models import TimeStampedModel
 
 
 class Project(TimeStampedModel):
+    """A project aggregates sprints and tasks under a single owner."""
+
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name='projects')

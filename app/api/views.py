@@ -10,11 +10,15 @@ from rest_framework.pagination import PageNumberPagination
 
 
 class IsOwner(permissions.BasePermission):
+    """Allow access only when the request user owns the object."""
+
     def has_object_permission(self, request, view, obj):
         return obj.owner == request.user
 
 
 class IsAdminOrOwner(permissions.BasePermission):
+    """Allow staff users or the object owner to access the object."""
+
     def has_object_permission(self, request, view, obj):
         return request.user.is_staff or obj.owner == request.user
 
@@ -24,6 +28,8 @@ class TaskPagination(PageNumberPagination):
 
 
 class TaskViewSet(viewsets.ModelViewSet):
+    """Manage tasks with owner-based access control and priority filtering."""
+
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
@@ -33,6 +39,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     ordering_fields = ['priority', 'priority_quadrant', 'created_at', 'due_date', 'story_points']
 
     def get_queryset(self):
+        """Filter tasks by owner and optional query parameters."""
         queryset = Task.objects.all()
         if not self.request.user.is_staff:
             queryset = queryset.filter(owner=self.request.user)
@@ -54,6 +61,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        """Save new tasks with ownership enforcement and auto-quadrant assignment."""
         sprint = serializer.validated_data.get('sprint')
         if sprint and not self.request.user.is_staff and sprint.project.owner != self.request.user:
             raise PermissionDenied('Cannot assign a task to a sprint outside your projects.')
@@ -67,6 +75,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             task.save(update_fields=['priority_quadrant'])
 
     def perform_update(self, serializer):
+        """Update tasks and keep completion/quadrant values in sync."""
         task = serializer.save()
         if task.completed and not task.completed_at:
             task.completed_at = timezone.now()
@@ -77,6 +86,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 
 class SprintViewSet(viewsets.ModelViewSet):
+    """Manage sprint lifecycle and provide sprint task operations."""
+
     queryset = Sprint.objects.all()
     serializer_class = SprintSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -86,11 +97,13 @@ class SprintViewSet(viewsets.ModelViewSet):
     pagination_class = TaskPagination
 
     def get_queryset(self):
+        """Return sprints for the current user, or all sprints for staff."""
         if self.request.user.is_staff:
             return Sprint.objects.all()
         return Sprint.objects.filter(project__owner=self.request.user)
 
     def perform_create(self, serializer):
+        """Only allow sprint creation under owned projects."""
         project = serializer.validated_data.get('project')
         if project and not self.request.user.is_staff and project.owner != self.request.user:
             raise PermissionDenied('Cannot create a sprint for a project you do not own.')
@@ -98,6 +111,7 @@ class SprintViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'post'])
     def tasks(self, request, pk=None):
+        """List tasks for a sprint or create a new task inside the sprint."""
         sprint = self.get_object()
 
         if request.method == 'POST':
@@ -122,11 +136,13 @@ class SprintViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def burndown(self, request, pk=None):
+        """Return a sprint burndown chart data series."""
         sprint = self.get_object()
         return Response({'burndown_data': sprint.get_burndown_data()})
 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
+        """Transition a sprint from planned to active."""
         sprint = self.get_object()
         if sprint.status != 'planned':
             return Response({'detail': 'Sprint can only be started when it is planned.'}, status=400)
@@ -136,11 +152,13 @@ class SprintViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
+        """Mark a sprint as completed and persist latest metrics."""
         sprint = self.get_object()
         if sprint.status != 'active':
             return Response({'detail': 'Sprint can only be completed when it is active.'}, status=400)
         sprint.status = 'completed'
         sprint.save(update_fields=['status'])
+        sprint.update_metrics()
         return Response({'status': sprint.status})
 
     @action(detail=True, methods=['post'], url_path='tasks/assign')
@@ -175,6 +193,8 @@ class SprintViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
+    """Manage project resources and enforce owner-based access."""
+
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [permissions.IsAuthenticated]
